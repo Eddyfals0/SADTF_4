@@ -138,6 +138,16 @@ class P2PGUI:
     
     def _create_connection_panel(self):
         """Create connection panel."""
+        import socket
+        # Get local IP
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            local_ip = "No disponible"
+        
         self.ip_input = ft.TextField(
             label="IP del nodo",
             hint_text="Ej: 192.168.1.100",
@@ -153,8 +163,11 @@ class P2PGUI:
         return ft.Container(
             content=ft.Column([
                 ft.Text("Conexión", size=14, weight=ft.FontWeight.BOLD),
+                ft.Text(f"Tu IP: {local_ip}", size=10, color=ft.Colors.GREY),
+                ft.Text("Puerto: 8888", size=10, color=ft.Colors.GREY),
                 self.ip_input,
-                self.connect_button
+                self.connect_button,
+                ft.Text("Nota: Ambos nodos deben estar en la misma red", size=9, color=ft.Colors.GREY, italic=True)
             ], spacing=5),
             padding=5
         )
@@ -235,19 +248,32 @@ class P2PGUI:
         self._show_status(f"Conectando a {ip}...")
         
         def connect():
-            success = self.connect_callback(ip)
-            self.page.run_task(lambda: self._on_connect_result(success, ip))
+            try:
+                success = self.connect_callback(ip)
+                # Update UI from main thread
+                if self.page:
+                    self.page.update()
+                    # Use a small delay to ensure UI is ready
+                    time.sleep(0.1)
+                    self._on_connect_result(success, ip)
+            except Exception as e:
+                if logger:
+                    logger.error(f"Connection error: {e}", exc_info=True)
+                if self.page:
+                    self._on_connect_result(False, ip)
         
         threading.Thread(target=connect, daemon=True).start()
     
     def _on_connect_result(self, success: bool, ip: str):
         """Handle connect result."""
-        self.connect_button.disabled = False
+        if self.connect_button:
+            self.connect_button.disabled = False
         if success:
-            self._show_status(f"Conectado a {ip}")
-            self.ip_input.value = ""
+            self._show_status(f"✓ Conectado a {ip}")
+            if self.ip_input:
+                self.ip_input.value = ""
         else:
-            self._show_status(f"Error al conectar a {ip}", is_error=True)
+            self._show_status(f"✗ Error al conectar a {ip}. Verifique:\n- IP correcta\n- Nodo ejecutándose\n- Misma red\n- Firewall", is_error=True)
     
     def _on_change_capacity_click(self, e):
         """Handle change capacity button click."""
@@ -267,10 +293,16 @@ class P2PGUI:
             try:
                 time.sleep(0.5)  # Update every 500ms
                 if self.page:
-                    self.page.run_task(self._update_ui)
+                    try:
+                        # Use page.update() directly instead of run_task
+                        self._update_ui()
+                    except Exception as e:
+                        if logger:
+                            logger.error(f"Error updating UI: {e}", exc_info=True)
             except Exception as e:
                 if logger:
-                    logger.error(f"Error in update loop: {e}")
+                    logger.error(f"Error in update loop: {e}", exc_info=True)
+                time.sleep(1)  # Wait longer on error
     
     def _update_ui(self):
         """Update UI components."""
@@ -416,8 +448,14 @@ class P2PGUI:
         self._show_status(f"Descargando {file_name}...")
         
         def download():
-            success = self.download_callback(file_name, str(save_path))
-            self.page.run_task(lambda: self._on_download_result(success, file_name))
+            try:
+                success = self.download_callback(file_name, str(save_path))
+                time.sleep(0.1)
+                self._on_download_result(success, file_name)
+            except Exception as e:
+                if logger:
+                    logger.error(f"Download error: {e}")
+                self._on_download_result(False, file_name)
         
         threading.Thread(target=download, daemon=True).start()
     
@@ -433,8 +471,14 @@ class P2PGUI:
         self._show_status(f"Eliminando {file_name}...")
         
         def delete():
-            success = self.delete_callback(file_name)
-            self.page.run_task(lambda: self._on_delete_result(success, file_name))
+            try:
+                success = self.delete_callback(file_name)
+                time.sleep(0.1)
+                self._on_delete_result(success, file_name)
+            except Exception as e:
+                if logger:
+                    logger.error(f"Delete error: {e}")
+                self._on_delete_result(False, file_name)
         
         threading.Thread(target=delete, daemon=True).start()
     
@@ -454,8 +498,14 @@ class P2PGUI:
                 self._show_status(f"Subiendo {e.files[0].name}...")
                 
                 def upload():
-                    success = self.upload_callback(file_path)
-                    self.page.run_task(lambda: self._on_upload_result(success, e.files[0].name))
+                    try:
+                        success = self.upload_callback(file_path)
+                        time.sleep(0.1)
+                        self._on_upload_result(success, e.files[0].name)
+                    except Exception as e:
+                        if logger:
+                            logger.error(f"Upload error: {e}")
+                        self._on_upload_result(False, e.files[0].name)
                 
                 threading.Thread(target=upload, daemon=True).start()
         

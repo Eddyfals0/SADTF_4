@@ -243,16 +243,41 @@ class P2PNode:
     def _gui_connect(self, ip: str) -> bool:
         """Handle GUI connect request."""
         try:
+            # Validate IP
+            if not ip or ip.strip() == "":
+                logger.error("IP vacía")
+                return False
+            
+            ip = ip.strip()
+            
+            # Don't allow connecting to localhost/127.0.0.1 (self)
+            if ip in ["127.0.0.1", "localhost", "::1"]:
+                logger.warning("No se puede conectar a localhost (es el mismo nodo)")
+                return False
+            
             if self.tcp_handler:
+                logger.info(f"Intentando conectar a {ip}:{self.port}")
                 success = self.tcp_handler.connect_to_node(ip, self.port)
                 if success:
                     # Update block table size
                     total_capacity = self.node_registry.get_total_capacity()
                     self.block_table.resize(total_capacity)
+                    logger.info(f"Conexión exitosa a {ip}")
+                else:
+                    logger.warning(f"Fallo al conectar a {ip}:{self.port}")
                 return success
             return False
+        except ConnectionRefusedError:
+            logger.error(f"Conexión rechazada por {ip}:{self.port} - Verifique que el nodo esté ejecutándose")
+            return False
+        except TimeoutError:
+            logger.error(f"Timeout al conectar a {ip}:{self.port} - Verifique la IP y el firewall")
+            return False
+        except OSError as e:
+            logger.error(f"Error de red al conectar a {ip}:{e}")
+            return False
         except Exception as e:
-            logger.error(f"Error connecting to {ip}: {e}")
+            logger.error(f"Error conectando a {ip}: {e}", exc_info=True)
             return False
     
     def _gui_upload(self, file_path: str) -> bool:
